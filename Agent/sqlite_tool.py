@@ -7,14 +7,13 @@ Database_path = r"C:\Users\HP\Desktop\Retail-Agent\AI-Assignment-Project\data\no
 def get_db_schema(tables: List[str] = None) -> str:
     """
     Retrieves the SQLite database schema for the given tables.
-    If no tables are specified, it returns the schema for all important tables.
     """
     conn = None
     try:
         conn = sqlite3.connect(Database_path)
         cursor = conn.cursor()
+        
         if tables is None:
-            # if no tables list then read these automatically.
             tables = [
                 "Orders", 
                 "Order Details", 
@@ -23,31 +22,34 @@ def get_db_schema(tables: List[str] = None) -> str:
                 "Categories",
                 "Suppliers"
             ]
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='view'")
-        views = [row[0] for row in cursor.fetchall()]
+
+        schema_parts = []
         
-        if 'orders' in views:
-            tables.extend(['orders', 'order_items', 'products', 'customers'])
-
-
-        schema = []
         for table_name in set(tables):
             try:
-                
+                # Get column info
                 cursor.execute(f"PRAGMA table_info('{table_name}')")
-                columns = [
-                    f"{col[1]} {col[2]}" 
-                    for col in cursor.fetchall()
-                ]
+                columns_info = cursor.fetchall()
                 
-                cursor.execute(f"SELECT sql FROM sqlite_master WHERE name='{table_name}'")
-                create_sql = cursor.fetchone()[0]
+                if not columns_info:
+                    continue
+                    
+                columns = [f"{col[1]} ({col[2]})" for col in columns_info]
                 
-                schema.append(f"Table: {table_name}\nColumns: {', '.join(columns)}\nCREATE TABLE: {create_sql}\n")
+                # Get sample data count
+                cursor.execute(f"SELECT COUNT(*) FROM '{table_name}'")
+                count = cursor.fetchone()[0]
+                
+                schema_parts.append(f"Table: {table_name}")
+                schema_parts.append(f"Row count: {count}")
+                schema_parts.append(f"Columns: {', '.join(columns)}")
+                schema_parts.append("")  # empty line
+                
             except Exception as e:
-                print(f"We found error at : {e}")
-        
-        return "\n---\n".join(schema)
+                schema_parts.append(f"Table: {table_name} - Error: {str(e)}")
+                continue
+
+        return "\n".join(schema_parts) if schema_parts else "No schema information available"
 
     except sqlite3.Error as e:
         return f"Database Error: {e}"
@@ -60,39 +62,41 @@ def get_db_schema(tables: List[str] = None) -> str:
 def execute_sql_query(query: str) -> Tuple[List[str], List[Any]]:
     """
     Executes a read-only SQL query and returns column names and results.
-    Assumes only SELECT statements are passed.
     """
     conn = None
     try:
         conn = sqlite3.connect(Database_path)
         cursor = conn.cursor()
+        
         query_upper = query.strip().upper()
         if not (query_upper.startswith("SELECT") or query_upper.startswith("PRAGMA") or query_upper.startswith("EXPLAIN")):
-             raise ValueError("Only read-only SQL (SELECT) is allowed.")
+            raise ValueError("Only read-only SQL (SELECT/PRAGMA/EXPLAIN) is allowed.")
         
         cursor.execute(query)
         
         columns = [description[0] for description in cursor.description]
-        
         results = cursor.fetchall()
         
         return columns, results
 
     except sqlite3.Error as e:
-        return ["Error"], [f"SQLITE_ERROR: {e}"]
+        raise Exception(f"SQLITE_ERROR: {e}")
     except Exception as e:
-        return ["Error"], [f"PYTHON_ERROR: {e}"]
+        raise Exception(f"PYTHON_ERROR: {e}")
     finally:
         if conn:
             conn.close()
 
 if __name__ == "__main__":
     print("Testing Schema Introspection")
-    res = get_db_schema()
+    schema = get_db_schema()
+    print("Schema:", schema[:500] + "..." if len(schema) > 500 else schema)
 
-
-    print("Testing SQL Execution")
-    test_query = "SELECT * FROM Customers WHERE CustomerID = 'BERGS';"
-    cols, rows = execute_sql_query(test_query)
-    print(f"Columns: {cols}")
-    print(f"Results: {rows}")
+    print("\nTesting SQL Execution")
+    test_query = "SELECT CustomerID, CompanyName FROM Customers LIMIT 3;"
+    try:
+        cols, rows = execute_sql_query(test_query)
+        print(f"Columns: {cols}")
+        print(f"Results: {rows}")
+    except Exception as e:
+        print(f"Error: {e}")

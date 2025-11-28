@@ -2,7 +2,6 @@ import os
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-
 DOC_PATHS = [
     r"C:\Users\HP\Desktop\Retail-Agent\AI-Assignment-Project\docs\catalog.md",
     r"C:\Users\HP\Desktop\Retail-Agent\AI-Assignment-Project\docs\kpi_definitions.md",
@@ -10,16 +9,12 @@ DOC_PATHS = [
     r"C:\Users\HP\Desktop\Retail-Agent\AI-Assignment-Project\docs\product_policy.md"
 ]
 
-
-
 def chunk_text(text: str, chunk_size: int = 250):
     words = text.split()
     return [
         " ".join(words[i:i + chunk_size])
         for i in range(0, len(words), chunk_size)
     ]
-
-
 
 def load_docs_from_paths(file_paths, chunk_size=250):
     documents = []
@@ -30,31 +25,29 @@ def load_docs_from_paths(file_paths, chunk_size=250):
             print(f"[WARNING] File not found: {path}")
             continue
 
-        with open(path, "r", encoding="utf-8") as f:
-            text = f.read()
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                text = f.read()
 
-        chunks = chunk_text(text, chunk_size)
+            chunks = chunk_text(text, chunk_size)
 
-        file = os.path.basename(path)
-        for i, chunk in enumerate(chunks):
-            documents.append(chunk)
-            metadata.append({
-                "source": file,
-                "chunk_id": f"{file}::chunk{i}"
-            })
+            file = os.path.basename(path)
+            for i, chunk in enumerate(chunks):
+                documents.append(chunk)
+                metadata.append({
+                    "source": file,
+                    "chunk_id": f"{file}::chunk{i}"
+                })
+        except Exception as e:
+            print(f"Error reading {path}: {e}")
 
     return documents, metadata
 
-
-#vectors
 def build_tfidf_index(docs):
-    vectorizer = TfidfVectorizer(stop_words="english")
+    vectorizer = TfidfVectorizer(stop_words="english", max_features=5000)
     vectors = vectorizer.fit_transform(docs)
     return vectorizer, vectors
 
-
-
-#retrivers
 def retrieve(query, top_k, vectorizer, doc_vectors, docs, metadata):
     query_vec = vectorizer.transform([query])
     scores = cosine_similarity(query_vec, doc_vectors)[0]
@@ -71,22 +64,26 @@ def retrieve(query, top_k, vectorizer, doc_vectors, docs, metadata):
         for i in top_ids
     ]
 
-
-
-#pipeline
 def init_retriever(chunk_size=250):
     docs, metadata = load_docs_from_paths(DOC_PATHS, chunk_size)
+    if not docs:
+        print("WARNING: No documents loaded!")
+        # Create empty structures
+        vectorizer = TfidfVectorizer(stop_words="english")
+        vectors = vectorizer.fit_transform([""])
+        return [], [], vectorizer, vectors
+        
     vectorizer, vectors = build_tfidf_index(docs)
     return docs, metadata, vectorizer, vectors
 
-
-#Test
 if __name__ == "__main__":
     print("Building TF-IDF RAG Retriever...")
     docs, meta, vect, vecs = init_retriever()
     print(f"Loaded documents: {len(docs)} chunks")
-    query = "What is the Summer Spice Campaign start date?"
+    
+    query = "what is start date of campaign?"
     results = retrieve(query, 3, vect, vecs, docs, meta)
+    
     for r in results:
         print("\n--- RESULT ---")
         print("Score:", r["score"])
